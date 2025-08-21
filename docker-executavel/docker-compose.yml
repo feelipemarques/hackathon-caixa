@@ -1,0 +1,51 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: sqlserver-test
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "Password23"
+    ports:
+      - "1433:1433"
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  init-db:
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      - sqlserver
+    networks:
+      - appnet
+    volumes:
+      - ./init-db.sql:/init-db.sql
+    entrypoint: >
+      /bin/bash -c "
+      echo 'Aguardando SQL Server iniciar...' &&
+      for i in {1..30}; do
+        /opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P Password23 -Q 'SELECT 1' && break
+        echo 'SQL Server ainda não está pronto... tentando novamente em 2s';
+        sleep 2
+      done &&
+      echo 'Executando script de inicialização...' &&
+      /opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P Password23 -d master -i /init-db.sql
+      "
+    restart: "no"
+
+  app:
+    image: felipemarquessx/quarkus-api-simulador-cef
+    container_name: minha-app
+    depends_on:
+      - init-db
+    environment:
+      - QUARKUS_DATASOURCE_DEFAULT_DB_KIND=mssql
+      - QUARKUS_DATASOURCE_DEFAULT_USERNAME=sa
+      - QUARKUS_DATASOURCE_DEFAULT_PASSWORD=Password23
+      - QUARKUS_DATASOURCE_DEFAULT_JDBC_URL=jdbc:sqlserver://sqlserver:1433;databaseName=hack;encrypt=false;trustServerCertificate=true
+    ports:
+      - "8080:8080"
+    networks:
+      - appnet
+
+networks:
+  appnet: {}
